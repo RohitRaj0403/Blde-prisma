@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(VIEWER)
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  verifications PublicationVerification[]
+  auditLogs     AuditLog[]
+  author        Author?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  ADMIN
+  VERIFIER
+  FACULTY
+  VIEWER
+}
+
+// ─── Core Entities ───────────────────────────────────────────────────────────
+
+model Publisher {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  journals Journal[]
+}
+
+model Journal {
+  id           String        @id @default(cuid())
+  title        String
+  issn         String?
+  eissn        String?
+  publisherId  String?
+  publisher    Publisher?    @relation(fields: [publisherId], references: [id])
+  publications Publication[]
+
+  @@index([issn])
+}
+
+model Department {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  faculty      String?
+  college      String?
+  campus       String?
+  users        User[]
+  authorships  Authorship[]
+  authors      Author[]
+}
+
+model Affiliation {
+  id             String       @id @default(cuid())
+  institutionName String
+  type           AffiliationType @default(EXTERNAL)
+  mappingRule    String?
+  authorships    Authorship[]
+}
+
+enum AffiliationType {
+  INTERNAL
+  EXTERNAL
+}
+
+model Author {
+  id               String       @id @default(cuid())
+  fullName         String
+  nameVariants     String[]
+  orcid            String?      @unique
+  scopusAuthorId   String?      @unique
+  googleScholarId  String?
+  vidwanId         String?      @unique
+  researcherId     String?      @unique
+  designation      String?
+  school           String?
+  primaryDeptId    String?
+  primaryDept      Department?  @relation(fields: [primaryDeptId], references: [id])
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  authorships      Authorship[]
+  userId           String?      @unique
+  user             User?        @relation(fields: [userId], references: [id])
+  bio              String?      @db.Text
+  education        String?      @db.Text
+  experience       String?      @db.Text
+  expertise        String[]
+  photoUrl         String?
+}
+
+model Publication {
+  id                 String               @id @default(cuid())
+  title              String
+  abstract           String?              @db.Text
+  doi                String?              @unique
+  pmid               String?              @unique
+  wosUid             String?
+  scopusEid          String?
+  journalId          String?
+  journal            Journal?             @relation(fields: [journalId], references: [id])
+  publicationType    PublicationType      @default(ARTICLE)
+  year               Int
+  publicationDate    DateTime?
+  volume             String?
+  issue              String?
+  pages              String?
+  source             ImportSource         @default(MANUAL)
+  url                String?
+  verificationStatus VerificationStatus   @default(DRAFT)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  importJobId        String?
+  importJob          ImportJob?           @relation(fields: [importJobId], references: [id])
+  authorships        Authorship[]
+  indexing           PublicationIndexing?
+  keywords           PublicationKeyword[]
+  citations          CitationSnapshot[]
+  verifications      PublicationVerification[]
+  auditLogs          AuditLog[]
+}
+
+enum PublicationType {
+  ARTICLE
+  REVIEW
+  CASE_REPORT
+  META_ANALYSIS
+  SYSTEMATIC_REVIEW
+  BOOK_CHAPTER
+  LETTER
+  EDITORIAL
+  CONFERENCE_PAPER
+  OTHER
+}
+
+enum ImportSource {
+  SCOPUS
+  WOS
+  PUBMED
+  CSV
+  MANUAL
+}
+
+enum VerificationStatus {
+  DRAFT
+  IMPORTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model Authorship {
+  id             String      @id @default(cuid())
+  publicationId  String
+  publication    Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         Author      @relation(fields: [authorId], references: [id])
+  authorOrder    Int
+  isCorresponding Boolean   @default(false)
+  affiliationId  String?
+  affiliation    Affiliation? @relation(fields: [affiliationId], references: [id])
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  internalAuthor Boolean     @default(false)
+
+  @@unique([publicationId, authorId])
+  @@index([publicationId])
+  @@index([authorId])
+}
+
+model PublicationIndexing {
+  id                   String      @id @default(cuid())
+  publicationId        String      @unique
+  publication          Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  indexedScopus        Boolean     @default(false)
+  indexedWos           Boolean     @default(false)
+  indexedPubmed        Boolean     @default(false)
+  indexedDoaj          Boolean     @default(false)
+  indexedUgcCare       Boolean     @default(false)
+  indexedGoogleScholar Boolean     @default(false)
+  evidenceLinks        String?
+  notes                String?
+}
+
+model Keyword {
+  id           String               @id @default(cuid())
+  keywordText  String               @unique
+  publications PublicationKeyword[]
+}
+
+model PublicationKeyword {
+  publicationId String
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  keywordId     String
+  keyword       Keyword     @relation(fields: [keywordId], references: [id])
+  keywordType   KeywordType @default(AUTHOR)
+
+  @@id([publicationId, keywordId])
+}
+
+enum KeywordType {
+  AUTHOR
+  INDEX
+  MESH
+}
+
+model CitationSnapshot {
+  id               String      @id @default(cuid())
+  publicationId    String
+  publication      Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  citationsScopus  Int?
+  citationsWos     Int?
+  citationsPubmed  Int?
+  capturedOn       DateTime    @default(now())
+
+  @@index([publicationId])
+}
+
+model PublicationVerification {
+  id            String      @id @default(cuid())
+  publicationId String
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  status        VerificationStatus
+  notes         String?
+  createdAt     DateTime    @default(now())
+}
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  publicationId String
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  action        String
+  oldValue      Json?
+  newValue      Json?
+  createdAt     DateTime    @default(now())
+}
+
+model ImportJob {
+  id               String        @id @default(cuid())
+  source           ImportSource
+  fileName         String
+  startedOn        DateTime      @default(now())
+  finishedOn       DateTime?
+  rowsIn           Int           @default(0)
+  rowsInserted     Int           @default(0)
+  rowsUpdated      Int           @default(0)
+  duplicatesFlagged Int          @default(0)
+  errorsCount      Int           @default(0)
+  jobLog           Json?
+  status           JobStatus     @default(RUNNING)
+  publications     Publication[]
+}
+
+enum JobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}

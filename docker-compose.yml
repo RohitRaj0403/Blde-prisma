@@ -1,0 +1,40 @@
+﻿version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: blde_prism_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: blde_lab_2026
+      POSTGRES_DB: blde_prism
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./blde_prism_postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: blde_prism_web
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:blde_lab_2026@db:5432/blde_prism?schema=public
+      NEXTAUTH_SECRET: blde_prism_production_secret_key_at_least_32_characters_long_2026
+      NEXTAUTH_URL: http://localhost:3000
+      PORT: 3000
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - 3000:3000
+
+volumes:
+  postgres_data:
